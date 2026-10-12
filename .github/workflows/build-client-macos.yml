@@ -3,7 +3,7 @@ name: Build Sintec.RD Client for macOS (Test)
 on:
   workflow_dispatch:
   push:
-    branches: [sintec-development]
+    branches: [sintec-dev]
     paths:
       - ".github/workflows/build-client-macos.yml"
       - "flutter/macos/**"
@@ -22,6 +22,8 @@ env:
 jobs:
   generate-bridge:
     uses: ./.github/workflows/bridge.yml
+    secrets:
+      SUBMODULE_TOKEN: ${{ secrets.SUBMODULE_TOKEN }}
 
   build-for-macOS:
     name: ${{ matrix.job.target }}
@@ -58,6 +60,8 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           submodules: recursive
+          token: ${{ secrets.SUBMODULE_TOKEN || github.token }}
+          persist-credentials: false
 
       - name: Install build runtime
         run: |
