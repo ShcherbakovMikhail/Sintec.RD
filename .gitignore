@@ -61,3 +61,5 @@ flutter/web/
 # README screenshots
 !docs/screenshots/sintec-rd-main.png
 !docs/screenshots/sintec-rd-remote.png
+!res/icon.svg
+!flutter/android/app/src/main/res/mipmap-*/ic_launcher_monochrome.png
