@@ -1,4 +1,4 @@
-name: Build Sintec.RD Client for macOS (Test)
+name: Build Sintec.RD Client for macOS
 
 on:
   workflow_dispatch:
