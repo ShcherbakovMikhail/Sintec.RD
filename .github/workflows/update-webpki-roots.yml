@@ -37,6 +37,8 @@ jobs:
           # The root workspace lists libs/hbb_common as a member; without the
           # submodule its manifest is missing and cargo cannot load the workspace.
           submodules: recursive
+          token: ${{ secrets.SUBMODULE_TOKEN || github.token }}
+          persist-credentials: false
 
       - name: Update webpki-roots in all lockfiles
         id: update
@@ -67,6 +69,7 @@ jobs:
           git checkout -B "$BRANCH"
           git add -- '*Cargo.lock'
           git commit -m "chore: update webpki-roots to latest Mozilla root store"
+          gh auth setup-git
           git push -f origin "$BRANCH"
           if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
             gh pr create \
