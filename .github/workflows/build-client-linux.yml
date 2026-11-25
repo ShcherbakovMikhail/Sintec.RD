@@ -1,0 +1,157 @@
+name: Build Sintec.RD Client for Linux (DEB)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [sintec-dev]
+    paths:
+      - ".github/workflows/build-client-linux.yml"
+      - ".github/scripts/package-sintec-deb.py"
+      - ".github/scripts/test_sintec_deb.py"
+      - "flutter/linux/**"
+
+permissions:
+  contents: read
+
+env:
+  VERSION: "1.5.3"
+  SINTEC_SERVER_ADDRESS: ${{ secrets.SINTEC_SERVER_ADDRESS }}
+  SINTEC_SERVER_PUBLIC_KEY: ${{ secrets.SINTEC_SERVER_PUBLIC_KEY }}
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+
+jobs:
+  validate-build-config:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Validate corporate settings and DEB packaging
+        run: |
+          python3 .github/scripts/check-sintec-config.py
+          python3 .github/scripts/test_sintec_deb.py
+
+  generate-bridge:
+    needs: [validate-build-config]
+    uses: ./.github/workflows/bridge.yml
+    secrets:
+      SUBMODULE_TOKEN: ${{ secrets.SUBMODULE_TOKEN }}
+      SINTEC_SERVER_ADDRESS: ${{ secrets.SINTEC_SERVER_ADDRESS }}
+      SINTEC_SERVER_PUBLIC_KEY: ${{ secrets.SINTEC_SERVER_PUBLIC_KEY }}
+
+  build-deb:
+    runs-on: ubuntu-22.04
+    needs: [generate-bridge]
+    steps:
+      - name: Export cache environment
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          submodules: recursive
+          token: ${{ secrets.SUBMODULE_TOKEN || github.token }}
+          persist-credentials: false
+
+      - name: Free unused runner SDK space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: false
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm libva-dev
+
+      - name: Set swap space
+        uses: pierotofy/set-swap-space@49819abfb41bd9b44fb781159c033dba90353a7c
+        with:
+          swap-size-gb: 12
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2
+        with:
+          vcpkgDirectory: /opt/artifacts/vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install native libraries
+        run: |
+          "$VCPKG_ROOT/vcpkg" install --triplet x64-linux --x-install-root="$VCPKG_ROOT/installed"
+
+      # Match upstream's Ubuntu 18.04 build container, not the newer runner's glibc.
+      - name: Build Linux amd64 DEB
+        uses: rustdesk-org/run-on-arch-action@d3fcfbb632b84cf7f6bc772bfaaa2c2f4f8789a8
+        with:
+          arch: x86_64
+          distro: ubuntu18.04
+          # No image publication/cache: corporate settings only enter docker run.
+          githubToken: ""
+          dockerRunArgs: |
+            --volume "${PWD}:/workspace"
+            --volume "/opt/artifacts:/opt/artifacts"
+            --env SINTEC_SERVER_ADDRESS
+            --env SINTEC_SERVER_PUBLIC_KEY
+            --env VERSION
+          shell: /bin/bash
+          install: |
+            apt-get update -y
+            apt-get install -y build-essential clang cmake curl git \
+              libayatana-appindicator3-dev libasound2-dev libclang-10-dev \
+              libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgtk-3-dev \
+              libpulse-dev libva-dev libxcb-randr0-dev libxcb-shape0-dev \
+              libxcb-xfixes0-dev libxdo-dev libxfixes-dev llvm-10-dev nasm \
+              ninja-build pkg-config python3 unzip wget xz-utils libssl-dev
+          run: |
+            set -euo pipefail
+            cd /opt
+            curl --fail --location --retry 3 -o rust.tar.gz \
+              https://static.rust-lang.org/dist/rust-1.75.0-x86_64-unknown-linux-gnu.tar.gz
+            tar xf rust.tar.gz
+            ./rust-1.75.0-x86_64-unknown-linux-gnu/install.sh
+            curl --fail --location --retry 3 -o flutter.tar.xz \
+              https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.24.5-stable.tar.xz
+            tar xf flutter.tar.xz
+            export PATH="/opt/flutter/bin:$PATH"
+            git config --global --add safe.directory /opt/flutter
+            git config --global --add safe.directory /workspace
+            git -C /opt/flutter apply /workspace/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff
+            cd /workspace
+            export VCPKG_ROOT=/opt/artifacts/vcpkg
+            export CARGO_INCREMENTAL=0
+            export DEB_ARCH=amd64
+            sed -i 's/\["cdylib", "staticlib", "rlib"\]/["cdylib"]/' Cargo.toml
+            cargo build --locked --lib --features hwcodec,flutter,unix-file-copy-paste --release
+            python3 ./build.py --flutter --skip-cargo
+            python3 .github/scripts/package-sintec-deb.py \
+              "rustdesk-${VERSION}.deb" "sintec-rd-${VERSION}-linux-amd64.deb"
+            test "$(dpkg-deb --field "sintec-rd-${VERSION}-linux-amd64.deb" Package)" = sintec-rd
+            test "$(dpkg-deb --field "sintec-rd-${VERSION}-linux-amd64.deb" Architecture)" = amd64
+            test "$(dpkg-deb --field "sintec-rd-${VERSION}-linux-amd64.deb" Version)" = "$VERSION"
+            dpkg-deb --info "sintec-rd-${VERSION}-linux-amd64.deb"
+            sha256sum "sintec-rd-${VERSION}-linux-amd64.deb" > "sintec-rd-${VERSION}-linux-amd64.deb.sha256"
+
+      - name: Upload DEB and checksum
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: sintec-rd-linux-amd64-deb
+          if-no-files-found: error
+          path: |
+            sintec-rd-${{ env.VERSION }}-linux-amd64.deb
+            sintec-rd-${{ env.VERSION }}-linux-amd64.deb.sha256
