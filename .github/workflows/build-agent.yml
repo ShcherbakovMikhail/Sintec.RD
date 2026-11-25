@@ -11,6 +11,8 @@ permissions:
   contents: read
 
 env:
+  SINTEC_SERVER_ADDRESS: ${{ secrets.SINTEC_SERVER_ADDRESS }}
+  SINTEC_SERVER_PUBLIC_KEY: ${{ secrets.SINTEC_SERVER_PUBLIC_KEY }}
   VCPKG_ROOT: C:\vcpkg
   VCPKG_DEFAULT_TRIPLET: x64-windows-static
   VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
@@ -29,6 +31,10 @@ jobs:
           submodules: recursive
           token: ${{ secrets.SUBMODULE_TOKEN || github.token }}
           persist-credentials: false
+
+      - name: Validate corporate build settings
+        shell: bash
+        run: python3 .github/scripts/check-sintec-config.py
 
       - name: Export GitHub Actions cache variables
         uses: actions/github-script@v7

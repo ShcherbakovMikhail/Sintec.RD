@@ -63,3 +63,10 @@ flutter/web/
 !docs/screenshots/sintec-rd-remote.png
 !res/icon.svg
 !flutter/android/app/src/main/res/mipmap-*/ic_launcher_monochrome.png
+# Local git worktrees
+.worktrees/
+
+# Local build credentials must never be committed.
+.env
+.env.*
+!.env.example

@@ -1,6 +1,11 @@
 name: CI
 
+permissions:
+  contents: read
+
 env:
+  SINTEC_SERVER_ADDRESS: ${{ secrets.SINTEC_SERVER_ADDRESS }}
+  SINTEC_SERVER_PUBLIC_KEY: ${{ secrets.SINTEC_SERVER_PUBLIC_KEY }}
 #   MIN_SUPPORTED_RUST_VERSION: "1.46.0"
 #   CICD_INTERMEDIATES_DIR: "_cicd-intermediates"
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
@@ -66,6 +71,7 @@ jobs:
   #       args: --locked
 
   build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: ${{ matrix.job.target }} (${{ matrix.job.os }})
     runs-on: ${{ matrix.job.os }}
     strategy:
@@ -236,7 +242,7 @@ jobs:
             CARGO_TEST_OPTIONS="--lib --bin ${PROJECT_NAME}"
             ;;
           *)
-            CARGO_TEST_OPTIONS="--workspace --no-fail-fast -- --skip test_get_cursor_pos --skip test_get_key_state"
+            CARGO_TEST_OPTIONS="--workspace --no-fail-fast"
             ;;
         esac;
 

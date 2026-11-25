@@ -12,7 +12,10 @@ fn main() {
 }
 
 #[cfg(target_os = "windows")]
-fn main() {
+fn main() -> std::process::ExitCode {
+    if let Some(exit_code) = platform::handle_service_control() {
+        return exit_code;
+    }
     #[cfg(not(feature = "inline"))]
     unsafe {
         winapi::um::shellscalingapi::SetProcessDpiAwareness(2);
@@ -24,10 +27,18 @@ fn main() {
     let is_get_id = command_args.get(1).map(String::as_str) == Some("--get-id");
 
     if is_connection_manager && !acquire_connection_manager_mutex() {
-        return;
+        return std::process::ExitCode::SUCCESS;
     }
 
-    let mut ui_args = core_main::core_main_with_options(true);
+    let mut ui_args = match core_main::core_main_with_options(true) {
+        Some(core_main::CoreMainAction::StartUi(args)) => Some(args),
+        Some(core_main::CoreMainAction::ExitFailure(error)) => {
+            hbb_common::log::error!("Command failed: {error}");
+            common::global_clean();
+            return std::process::ExitCode::FAILURE;
+        }
+        None => None,
+    };
 
     if is_get_id {
         let result = write_agent_id(command_args.get(2).map(String::as_str));
@@ -36,9 +47,9 @@ fn main() {
         }
         common::global_clean();
         if result.is_err() {
-            std::process::exit(40);
+            return std::process::ExitCode::from(40);
         }
-        return;
+        return std::process::ExitCode::SUCCESS;
     }
 
     if let Some(args) = ui_args.as_mut() {
@@ -60,6 +71,7 @@ fn main() {
     }
 
     common::global_clean();
+    std::process::ExitCode::SUCCESS
 }
 
 #[cfg(target_os = "windows")]

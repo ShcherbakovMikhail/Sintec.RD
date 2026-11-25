@@ -13,6 +13,12 @@
 
 Sintec.RD is a corporate remote-access build based on [RustDesk](https://github.com/rustdesk/rustdesk). It includes a preconfigured organization server and public key, custom branding, and installers. The Windows distribution includes an EXE/MSI client and an Enterprise Agent.
 
+Corporate builds read `SINTEC_SERVER_ADDRESS` and `SINTEC_SERVER_PUBLIC_KEY`
+from GitHub Actions Secrets at compile time. Both settings are required.
+The key must be the server's public key, never its private key. These values
+are absent from the current source but remain extractable from built binaries.
+Local builds use environment variables with the same names.
+
 ## Screenshots
 
 ### Sintec.RD main window
